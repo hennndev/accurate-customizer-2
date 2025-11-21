@@ -47,10 +47,12 @@ Route::middleware('auth')->group(function () {
   });
   Route::controller(SystemLogsController::class)->prefix('system-logs')->group(function () {
     // tampilan system logs
-    Route::get('/', 'index')->name('system-logs.index');
+    Route::get('/', 'index')->name('system-logs.index');  
   });
-  Route::controller(UsersController::class)->prefix('users')->group(function () {
-    // tampilan users
+  Route::controller(UsersController::class)->middleware('can:manage_users')->prefix('users')->group(function () {
     Route::get('/', 'index')->name('users.index');
+    Route::post('/', 'store')->name('users.store');
+    Route::put('/{user}', 'update')->name('users.update');
+    Route::delete('/{user}', 'destroy')->name('users.destroy');
   });
 });

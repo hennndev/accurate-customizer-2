@@ -32,13 +32,13 @@ class RolesAndPermissionSeeder extends Seeder
 
         $superAdminUser = User::firstOrCreate(
             ['email' => 'superadmin@example.com'],
-            ['name' => 'Super Admin', 'password' => Hash::make('password'), 'role' => 'Super Admin']
+            ['name' => 'Super Admin', 'password' => Hash::make('password'), 'role' => 'Super Admin', 'status' => 'Active']
         );
         $superAdminUser->assignRole($superAdminRole);
         
         $adminUser = User::firstOrCreate(
             ['email' => 'admin@example.com'],
-            ['name' => 'Admin', 'password' => Hash::make('password'), 'role' => 'Admin']
+            ['name' => 'Admin', 'password' => Hash::make('password'), 'role' => 'Admin', 'status' => 'Active']
         );
         $adminUser->assignRole($adminRole);
     }
