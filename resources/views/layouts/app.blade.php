@@ -8,8 +8,13 @@
     <title>{{ config('app.name', 'Laravel') }}</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
+        [x-cloak] {
+            display: none !important;
+        }
+
         .sidebar {
             transition: all 0.3s ease;
         }
@@ -163,15 +168,17 @@
                                 </svg>
                                 <p class="text-sm sidebar-text font-medium text-black">Configuration</p>
                             </a> --}}
-                            <a href="{{ route('users.index') }}"
-                                class="menu-item sidebar-link flex items-center gap-3 {{ request()->routeIs('users.*') ? 'active' : '' }}">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                    stroke-width="1.5" stroke="currentColor" class="size-5 flex-shrink-0">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
-                                </svg>
-                                <p class="text-sm sidebar-text font-medium text-black">Users</p>
-                            </a>
+                            @can('manage_users')
+                                <a href="{{ route('users.index') }}"
+                                    class="menu-item sidebar-link flex items-center gap-3 {{ request()->routeIs('users.*') ? 'active' : '' }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                        stroke-width="1.5" stroke="currentColor" class="size-5 flex-shrink-0">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                                    </svg>
+                                    <p class="text-sm sidebar-text font-medium text-black">Users</p>
+                                </a>
+                            @endcan
                         </div>
                     </div>
                 </div>
@@ -205,15 +212,14 @@
                             <button onclick="toggleDropdown()"
                                 class="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 focus:outline-none transition duration-150 ease-in-out">
                                 <img class="h-8 w-8 rounded-full object-cover"
-                                    src="https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff"
-                                    alt="User">
+                                        src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->name) }}&background=4F46E5&color=fff"
+                                        alt="{{ Auth::user()->name }}">
                             </button>
                             <div id="dropdown"
                                 class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50">
                                 <div class="block px-4 py-2 text-xs text-gray-400">Manage Account</div>
-                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                    Profile
-                                </a>
+                                <x-dropdown-link href="{{ route('profile.edit') }}">{{ __('Profile') }}
+                                </x-dropdown-link>
                                 <div class="border-t border-gray-200"></div>
                                 <form method="POST" action="{{ route('logout') }}">
                                     @csrf
@@ -235,6 +241,61 @@
 
     @stack('scripts')
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    {{-- SweetAlert Notifications --}}
+    @if (session('success'))
+        <script>
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: '{{ session('success') }}',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                toast: true,
+                position: 'top-end',
+                customClass: {
+                    popup: 'colored-toast'
+                }
+            });
+        </script>
+    @endif
+
+    @if (session('error'))
+        <script>
+            Swal.fire({
+                icon: 'error',
+                title: 'Error!',
+                text: '{{ session('error') }}',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                toast: true,
+                position: 'top-end',
+                customClass: {
+                    popup: 'colored-toast'
+                }
+            });
+        </script>
+    @endif
+
+    @if ($errors->any())
+        <script>
+            Swal.fire({
+                icon: 'error',
+                title: 'Validation Error!',
+                html: '<div class="text-center space-y-2">@foreach ($errors->all() as $error)<p class="text-base">{{ $error }}</p>@endforeach</div>',
+                showConfirmButton: true,
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'OK',
+                width: '500px',
+                customClass: {
+                    htmlContainer: 'text-base'
+                }
+            });
+        </script>
+    @endif
+
     <script>
         // Inisialisasi sidebar state
         let sidebarOpen = window.innerWidth >= 1024;
