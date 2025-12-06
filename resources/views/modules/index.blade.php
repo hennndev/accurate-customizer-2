@@ -1,4 +1,5 @@
 <x-app-layout>
+    <x-slot name="title">Modules Management</x-slot>
     <x-slot name="header">
         <div class="flex items-center gap-3">
             <div
@@ -20,6 +21,8 @@
         capturing: false,
         progress: 0,
         currentModule: '',
+        switchingDb: false,
+        searchQuery: '',
         async captureData(moduleName, moduleSlug) {
             this.capturing = true;
             this.progress = 0;
@@ -66,7 +69,14 @@
                 alert('An error occurred while capturing data');
             }
         }
-    }">
+    }" x-init="$watch('searchQuery', () => {
+        Array.from($refs.moduleGrid.children).forEach(card => {
+            const name = card.dataset.moduleName?.toLowerCase() || '';
+            const description = card.dataset.moduleDescription?.toLowerCase() || '';
+            const matches = !searchQuery || name.includes(searchQuery.toLowerCase()) || description.includes(searchQuery.toLowerCase());
+            card.style.display = matches ? '' : 'none';
+        });
+    })">
         {{-- Progress Modal --}}
         <div x-show="capturing" x-transition:enter="transition ease-out duration-300"
             x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
@@ -143,17 +153,27 @@
                         <div x-data="{
                             open: false,
                             selected: @js($current_database_name ?? 'Select Database'),
+                            loading: false,
                             selectDb(dbId, dbAlias, dbData) {
                                 this.selected = dbAlias;
                                 this.open = false;
+                                this.loading = true;
+                                $dispatch('db-switching', { switching: true });
                                 document.getElementById('selectedDbInput').value = JSON.stringify(dbData);
                                 document.getElementById('dbSelectForm').submit();
                             }
-                        }" class="relative w-full">
-                            <button @click="open = !open" type="button"
-                                class="bg-white/20 backdrop-blur-md border border-white/30 text-white text-sm rounded-lg focus:ring-white/50 focus:border-white/50 w-full p-2.5 text-left flex items-center justify-between">
-                                <span x-text="selected"></span>
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        }" @db-switching.window="switchingDb = $event.detail.switching" class="relative w-full">
+                            <button @click="open = !open" type="button" :disabled="loading"
+                                class="bg-white/20 backdrop-blur-md border border-white/30 text-white text-sm rounded-lg focus:ring-white/50 focus:border-white/50 w-full p-2.5 text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span x-show="!loading" x-text="selected"></span>
+                                <span x-show="loading" class="flex items-center gap-2">
+                                    <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Switching database...
+                                </span>
+                                <svg x-show="!loading" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                     stroke-width="1.5" stroke="currentColor" class="size-5 transition-transform"
                                     :class="{ 'rotate-180': open }">
                                     <path stroke-linecap="round" stroke-linejoin="round"
@@ -244,7 +264,24 @@
             </div>
         @endif
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+        {{-- Search Bar --}}
+        <div class="w-full">
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                    </svg>
+                </div>
+                <input type="text" x-model="searchQuery" placeholder="Search modules by name or description..." class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                <div x-show="searchQuery" @click="searchQuery = ''" class="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400 hover:text-gray-600">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5" x-ref="moduleGrid">
             @php
                 $moduleCards = [
                     [
@@ -638,7 +675,7 @@
                     $lastCaptured = $isCaptured ? $moduleData->updated_at : null;
                 @endphp
 
-                <div
+                <div data-module-name="{{ $card['name'] }}" data-module-description="{{ $card['description'] }}"
                     class="rounded-xl border border-gray-200 min-h-[280px] md:min-h-[320px] shadow-xl bg-white flex flex-col justify-between flex-1 px-5 md:px-7 py-4 md:py-5">
                     <div class="flex flex-col gap-5">
                         <div class="flex items-center justify-between">
@@ -690,7 +727,8 @@
                                     {{ $lastCaptured->diffForHumans() }}</p>
                             </div>
                             <button @click="captureData('{{ $card['name'] }}', '{{ $card['slug'] }}')"
-                                class="flex items-center justify-center gap-3 bg-gradient-to-r from-{{ $card['color'] }}-600 to-{{ $card['color'] }}-400 text-white font-semibold px-4 py-2 rounded-lg hover:from-{{ $card['color'] }}-700 hover:to-{{ $card['color'] }}-500 transition">
+                                :disabled="capturing || switchingDb"
+                                class="flex items-center justify-center gap-3 bg-gradient-to-r from-{{ $card['color'] }}-600 to-{{ $card['color'] }}-400 text-white font-semibold px-4 py-2 rounded-lg hover:from-{{ $card['color'] }}-700 hover:to-{{ $card['color'] }}-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
                                     class="size-5">
                                     <path fill-rule="evenodd"
@@ -704,7 +742,8 @@
                                 <p class="text-gray-500 font-medium text-[15px]">No data captured yet</p>
                             </div>
                             <button @click="captureData('{{ $card['name'] }}', '{{ $card['slug'] }}')"
-                                class="flex items-center justify-center gap-3 bg-gradient-to-r from-{{ $card['color'] }}-600 to-{{ $card['color'] }}-400 text-white font-semibold px-4 py-2 rounded-lg hover:from-{{ $card['color'] }}-700 hover:to-{{ $card['color'] }}-500 transition">
+                                :disabled="capturing || switchingDb"
+                                class="flex items-center justify-center gap-3 bg-gradient-to-r from-{{ $card['color'] }}-600 to-{{ $card['color'] }}-400 text-white font-semibold px-4 py-2 rounded-lg hover:from-{{ $card['color'] }}-700 hover:to-{{ $card['color'] }}-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
                                     class="size-5">
                                     <path fill-rule="evenodd"

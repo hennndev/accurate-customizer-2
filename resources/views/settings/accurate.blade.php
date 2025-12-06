@@ -1,4 +1,7 @@
 <x-app-layout>
+  <x-slot name="title">
+        Accurate Integration Settings
+    </x-slot>
   <x-slot name="header">
         Accurate Integration
     </x-slot>

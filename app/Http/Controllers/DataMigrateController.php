@@ -54,7 +54,10 @@ class DataMigrateController extends Controller
         if ($request->filled('status') && $request->status !== 'All Status') {
             $query->where('status', strtolower($request->status));
         }
-        $transactions = $query->get();        
+        
+        // Paginate transactions - 100 per page
+        $transactions = $query->paginate(100)->appends($request->except('page'));
+        
         $filter_databases = AccurateDatabase::pluck('db_name');
         $modules = Module::pluck('name')->unique();
         return view('migrate.index', compact('transactions', 'databases', 'filter_databases', 'modules', 'current_database_name'));
@@ -121,6 +124,10 @@ class DataMigrateController extends Controller
     // MIGRATE KE ACCURATE
     public function migrateToAccurate(Request $request)
     {
+        // Remove execution time limit for large data migration
+        set_time_limit(0);
+        ini_set('max_execution_time', 0);
+        
         $request->validate([
             'ids' => 'required|array',
             'ids.*' => 'required|integer|exists:transactions,id'
@@ -142,6 +149,38 @@ class DataMigrateController extends Controller
             ]);
             return redirect()->route('migrate.index')->with('error', 'Please select a target database first.');
         }
+        
+        // Re-open database to ensure fresh session and valid host
+        try {
+            $dbInfo = $this->accurateService->openDatabaseById($targetDbId);
+            if (!$dbInfo) {
+                Log::error('MIGRATION_FAILED_TO_REOPEN_DATABASE', [
+                    'user_id' => Auth::id(),
+                    'target_database_id' => $targetDbId,
+                ]);
+                return redirect()->route('migrate.index')->with('error', 'Failed to connect to target database. Please try again.');
+            }
+            
+            // Update session with fresh database info
+            session([
+                'accurate_database' => $dbInfo,
+                'database_id' => $targetDbId,
+                'database_name' => $targetDbName,
+            ]);
+            
+            Log::info('MIGRATION_DATABASE_REOPENED', [
+                'database_id' => $targetDbId,
+                'database_name' => $targetDbName,
+                'host' => $dbInfo['host'] ?? 'unknown',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('MIGRATION_DATABASE_REOPEN_ERROR', [
+                'error' => $e->getMessage(),
+                'database_id' => $targetDbId,
+            ]);
+            return redirect()->route('migrate.index')->with('error', 'Failed to connect to database: ' . $e->getMessage());
+        }
+        
         try {
             $ids = $request->input('ids', []);
             $transactions = Transaction::with(['module', 'accurateDatabase'])

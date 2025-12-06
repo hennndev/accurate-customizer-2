@@ -13,14 +13,39 @@ class AccurateService
     if (!session()->has('accurate_access_token')) {
       throw new Exception('Tidak bisa mengambil daftar database tanpa Access Token.');
     }
+    
+    // Check if database list is already cached in session (valid for 30 minutes)
+    if (session()->has('accurate_database_list_cache')) {
+      $cache = session('accurate_database_list_cache');
+      // Cache valid for 30 minutes
+      if (isset($cache['timestamp']) && (time() - $cache['timestamp']) < 1800) {
+        Log::info('ACCURATE_DB_LIST_FROM_CACHE');
+        return $cache['data'];
+      }
+    }
+    
+    Log::info('ACCURATE_DB_LIST_FETCHING_FROM_API');
     $response = Http::withToken(session('accurate_access_token'))
+      ->timeout(120) // Set timeout to 2 minutes for slow API connections
+      ->connectTimeout(60) // Set connection timeout to 60 seconds
       ->get(env('ACCURATE_API_URL') . '/api/db-list.do');
 
     if ($response->failed()) {
       Log::error('ACCURATE_ERROR - Gagal mengambil daftar database', $response->json() ?? ['body' => $response->body()]);
       throw new Exception("Gagal mendapatkan daftar database dari Accurate.");
     }
-    return $response->json()['d'] ?? [];
+    
+    $databases = $response->json()['d'] ?? [];
+    
+    // Cache the database list in session
+    session([
+      'accurate_database_list_cache' => [
+        'data' => $databases,
+        'timestamp' => time()
+      ]
+    ]);
+    
+    return $databases;
   }
 
 
@@ -43,7 +68,7 @@ class AccurateService
     set_time_limit(300);
     
     // Special handling for modules that only support save.do (not bulk-save)
-    if (str_contains($endpoint, 'warehouse') || str_contains($endpoint, 'price-category')) {
+    if (str_contains($endpoint, 'warehouse') || str_contains($endpoint, 'price-category') || str_contains($endpoint, 'work-order') || str_contains($endpoint, 'bill-of-material')) {
       return $this->saveOneByOne($endpoint, $data);
     }
 
@@ -231,6 +256,11 @@ class AccurateService
         continue;
       }
 
+      // Skip transactionType for journal-voucher endpoint
+      if ($key === 'transactionType' && str_contains($endpoint, 'journal-voucher')) {
+        continue;
+      }
+
       // Skip locationId for warehouse
       if ($key === 'locationId' && str_contains($endpoint, 'warehouse')) {
         continue;
@@ -250,8 +280,8 @@ class AccurateService
         continue;
       }
 
-      // Special handling for sales-order, sales-invoice, sales-quotation, sales-receipt and sales-return: replace customer object with customerNo only
-      if ($key === 'customer' && is_array($value) && (str_contains($endpoint, 'sales-order') || str_contains($endpoint, 'sales-invoice') || str_contains($endpoint, 'sales-quotation') || str_contains($endpoint, 'sales-receipt') || str_contains($endpoint, 'sales-return'))) {
+      // Special handling for sales-order, sales-invoice, sales-quotation, sales-receipt, sales-return and delivery-order: replace customer object with customerNo only
+      if ($key === 'customer' && is_array($value) && (str_contains($endpoint, 'sales-order') || str_contains($endpoint, 'sales-invoice') || str_contains($endpoint, 'sales-quotation') || str_contains($endpoint, 'sales-receipt') || str_contains($endpoint, 'sales-return') || str_contains($endpoint, 'delivery-order'))) {
         if (isset($value['customerNo'])) {
           $cleaned['customerNo'] = $value['customerNo'];
         }
@@ -282,18 +312,64 @@ class AccurateService
         continue;
       }
 
-      // Special handling for sales-receipt: replace bank object with bankNo
-      if ($key === 'bank' && is_array($value) && str_contains($endpoint, 'sales-receipt')) {
+      // Special handling for sales-receipt and purchase-payment: replace bank object with bankNo
+      if ($key === 'bank' && is_array($value) && (str_contains($endpoint, 'sales-receipt') || str_contains($endpoint, 'purchase-payment'))) {
         if (isset($value['no'])) {
           $cleaned['bankNo'] = $value['no'];
         }
         continue;
       }
 
-      // Replace transDate with current date for item-adjustment
-      if ($key === 'transDate' && str_contains($endpoint, 'item-adjustment')) {
-        $value = now()->format('d/m/Y');
+      // Special handling for item-transfer: replace fromItemTransfer object with fromItemTransferNo
+      if ($key === 'fromItemTransfer' && is_array($value) && str_contains($endpoint, 'item-transfer')) {
+        if (isset($value['number'])) {
+          $cleaned['fromItemTransferNo'] = $value['number'];
+        }
+        continue;
       }
+
+      // Special handling for purchase-return: replace invoice object with invoiceNumber
+      if ($key === 'invoice' && is_array($value) && (str_contains($endpoint, 'purchase-return') || str_contains($endpoint, 'sales-return'))) {
+        if (isset($value['number'])) {
+          $cleaned['invoiceNumber'] = $value['number'];
+        }
+        continue;
+      }
+      if ($key === 'order' && is_array($value) && str_contains($endpoint, 'stock-opname-result')) {
+        if (isset($value['number'])) {
+          $cleaned['orderNumber'] = $value['number'];
+        }
+        continue;
+      }
+
+      // Special handling for roll-over: replace jobOrder object with jobOrderNumber
+      if ($key === 'jobOrder' && is_array($value) && str_contains($endpoint, 'roll-over')) {
+        if (isset($value['number'])) {
+          $cleaned['jobOrderNumber'] = $value['number'];
+        }
+        continue;
+      }
+
+      // Special handling for work-order: replace billOfMaterial object with billOfMaterialNumber
+      if ($key === 'billOfMaterial' && is_array($value) && str_contains($endpoint, 'work-order')) {
+        if (isset($value['number'])) {
+          $cleaned['billOfMaterialNo'] = $value['number'];
+        }
+        continue;
+      }
+      if ($key === 'manufactureOrder' && is_array($value) && str_contains($endpoint, 'work-order')) {
+        if (isset($value['number'])) {
+          $cleaned['manufactureOrderNo'] = $value['number'];
+        }
+        continue;
+      }
+      if ($key === 'item' && is_array($value) && str_contains($endpoint, 'bill-of-material')) {
+        if (isset($value['no'])) {
+          $cleaned['itemNo'] = $value['no'];
+        }
+        continue;
+      }
+
 
       if ($key === 'npwpNo' && is_string($value)) {
         $value = preg_replace('/[^0-9]/', '', $value);
@@ -328,8 +404,8 @@ class AccurateService
           if (is_array($subValue)) {
             $cleanedSubItem = $this->cleanDataItem($subValue, $endpoint);
             if (!empty($cleanedSubItem)) {
-              // Special handling for detailItem in purchase-order, purchase-invoice, purchase-return, receive-item, sales-order, sales-invoice, sales-quotation, sales-return and job-order: flatten item object
-              if ($key === 'detailItem' && (str_contains($endpoint, 'purchase-order') || str_contains($endpoint, 'purchase-invoice') || str_contains($endpoint, 'purchase-return') || str_contains($endpoint, 'receive-item') || str_contains($endpoint, 'sales-order') || str_contains($endpoint, 'sales-invoice') || str_contains($endpoint, 'job-order') || str_contains($endpoint, 'sales-quotation') || str_contains($endpoint, 'sales-return'))) {
+              // Special handling for detailItem in purchase-order, purchase-invoice, purchase-return, receive-item, sales-order, sales-invoice, sales-quotation, sales-return, delivery-order, item-transfer and job-order: flatten item object
+              if ($key === 'detailItem' && (str_contains($endpoint, 'purchase-order') || str_contains($endpoint, 'purchase-invoice') || str_contains($endpoint, 'purchase-return') || str_contains($endpoint, 'receive-item') || str_contains($endpoint, 'sales-order') || str_contains($endpoint, 'sales-invoice') || str_contains($endpoint, 'job-order') || str_contains($endpoint, 'sales-quotation') || str_contains($endpoint, 'sales-return') || str_contains($endpoint, 'delivery-order') || str_contains($endpoint, 'item-transfer'))) {
                 if (isset($cleanedSubItem['item']['no'])) {
                   $cleanedSubItem['itemNo'] = $cleanedSubItem['item']['no'];
                   unset($cleanedSubItem['item']);
@@ -354,11 +430,15 @@ class AccurateService
                 $cleanedSubItem = $adjustmentItem;
               }
 
-              // Special handling for detailSerialNumber in item and job-order endpoint: add serialNumberNo
-              if ($key === 'detailSerialNumber' && (str_contains($endpoint, '/item/') || str_contains($endpoint, 'job-order'))) {
+              // Special handling for detailSerialNumber in item, job-order and item-transfer endpoint: flatten serialNumber to serialNumberNo
+              if ($key === 'detailSerialNumber' && (str_contains($endpoint, '/item/') || str_contains($endpoint, 'job-order') || str_contains($endpoint, 'item-transfer') || str_contains($endpoint, 'purchase-invoice') || str_contains($endpoint, 'receive-item'))) {
                 if (isset($cleanedSubItem['serialNumber']['number'])) {
                   $cleanedSubItem['serialNumberNo'] = $cleanedSubItem['serialNumber']['number'];
-                }
+                  unset($cleanedSubItem['serialNumber']);
+                } elseif (isset($cleanedSubItem['serialNumber']['no'])) {
+                  $cleanedSubItem['serialNumberNo'] = $cleanedSubItem['serialNumber']['no'];
+                  unset($cleanedSubItem['serialNumber']);
+                } 
               }
 
               // Special handling for detailAccount in expense endpoint: flatten account object to accountNo
@@ -374,6 +454,50 @@ class AccurateService
                 if (isset($cleanedSubItem['glAccount']['no'])) {
                   $cleanedSubItem['accountNo'] = $cleanedSubItem['glAccount']['no'];
                   unset($cleanedSubItem['glAccount']);
+                }
+              }
+
+              // Special handling for detailExpense in work-order endpoint: flatten item object to itemNo
+              if ($key === 'detailExpense' && (str_contains($endpoint, 'work-order') || str_contains($endpoint, 'bill-of-material'))) {
+                if (isset($cleanedSubItem['item']['no'])) {
+                  $cleanedSubItem['itemNo'] = $cleanedSubItem['item']['no'];
+                  unset($cleanedSubItem['item']);
+                }
+              }
+              if ($key === 'detailMaterial' && (str_contains($endpoint, 'work-order') || str_contains($endpoint, 'bill-of-material'))) {
+                if (isset($cleanedSubItem['item']['no'])) {
+                  $cleanedSubItem['itemNo'] = $cleanedSubItem['item']['no'];
+                  unset($cleanedSubItem['item']);
+                }
+              }
+              if ($key === 'detailExtraFinishGood' && (str_contains($endpoint, 'work-order') || str_contains($endpoint, 'bill-of-material'))) {
+                if (isset($cleanedSubItem['item']['no'])) {
+                  $cleanedSubItem['itemNo'] = $cleanedSubItem['item']['no'];
+                  unset($cleanedSubItem['item']);
+                }
+              }
+              if ($key === 'detailProcess' && (str_contains($endpoint, 'work-order') || str_contains($endpoint, 'bill-of-material'))) {
+                if (isset($cleanedSubItem['processCategory']['name'])) {
+                  $cleanedSubItem['processCategoryName'] = $cleanedSubItem['processCategory']['name'];
+                  unset($cleanedSubItem['processCategory']);
+                }
+              }
+
+              // Special handling for detailInvoice in purchase-payment endpoint: flatten invoice object to invoiceNo
+              if ($key === 'detailInvoice' && str_contains($endpoint, 'purchase-payment')) {
+                if (isset($cleanedSubItem['invoice']['number'])) {
+                  $cleanedSubItem['invoiceNo'] = $cleanedSubItem['invoice']['number'];
+                  unset($cleanedSubItem['invoice']);
+                }
+
+                // Handle detailDiscount within detailInvoice: flatten account object to accountNo
+                if (isset($cleanedSubItem['detailDiscount']) && is_array($cleanedSubItem['detailDiscount'])) {
+                  foreach ($cleanedSubItem['detailDiscount'] as $discountKey => $discount) {
+                    if (is_array($discount) && isset($discount['account']['no'])) {
+                      $cleanedSubItem['detailDiscount'][$discountKey]['accountNo'] = $discount['account']['no'];
+                      unset($cleanedSubItem['detailDiscount'][$discountKey]['account']);
+                    }
+                  }
                 }
               }
               
@@ -420,7 +544,8 @@ class AccurateService
       ->withHeaders([
         'X-Session-ID' => $sessionId,
       ])
-      ->timeout(300) // Set timeout to 5 minutes for large data operations
+      ->timeout(600) // Set timeout to 10 minutes for large data operations
+      ->connectTimeout(60) // Set connection timeout to 60 seconds
       ->acceptJson()
       ->baseUrl($host . '/accurate');
   }
@@ -435,6 +560,8 @@ class AccurateService
       $response = Http::withOptions([
         'track_redirects' => true
       ])->withToken(session('accurate_access_token'))
+        ->timeout(120) // Set timeout to 2 minutes for database opening
+        ->connectTimeout(60) // Set connection timeout to 60 seconds
         ->post(env('ACCURATE_API_URL') . '/api/open-db.do', ['id' => $dbId]);
 
       if ($response->failed()) {
@@ -582,23 +709,96 @@ class AccurateService
   public function fetchModuleData(string $endpoint, array $params = []): array
   {
     try {
-      // Add default pagination parameter to get more data (default is 20)
-      // Set to 1000 to get large datasets in one request
-      if (!isset($params['sp.pageSize'])) {
-        $params['sp.pageSize'] = 1000;
-      }
+      $allData = [];
+      $pageNumber = 1;
+      $pageSize = 100; // Accurate API max page size is usually 100
       
-      $response = $this->dataClient()->get($endpoint, $params);
-      if ($response->failed()) {
-        Log::error('ACCURATE_FETCH_MODULE_ERROR', [
+      // Set page size
+      $params['sp.pageSize'] = $pageSize;
+      
+      do {
+        // Set current page number
+        $params['sp.page'] = $pageNumber;
+        
+        Log::info('ACCURATE_FETCH_PAGE', [
           'endpoint' => $endpoint,
-          'params' => $params,
-          'response' => $response->json()
+          'page' => $pageNumber,
+          'pageSize' => $pageSize
         ]);
-        throw new Exception('Failed to fetch module data from Accurate');
-      }
+        
+        $response = $this->dataClient()->get($endpoint, $params);
+        
+        if ($response->failed()) {
+          Log::error('ACCURATE_FETCH_MODULE_ERROR', [
+            'endpoint' => $endpoint,
+            'page' => $pageNumber,
+            'params' => $params,
+            'response' => $response->json()
+          ]);
+          throw new Exception('Failed to fetch module data from Accurate');
+        }
 
-      return $response->json()['d'] ?? [];
+        $responseData = $response->json();
+        $pageData = $responseData['d'] ?? [];
+        
+        // Special filtering for journal-voucher: only get manual journal vouchers
+        // Exclude auto-generated journals from other transactions (DO, SPY, PPY, etc.)
+        if (str_contains($endpoint, 'journal-voucher')) {
+          $pageData = array_filter($pageData, function($item) {
+            // Keep only if journalVoucher is true (manual journal)
+            // OR if transactionType is empty/null/JV
+            $isManualJournal = isset($item['journalVoucher']) && $item['journalVoucher'] === true;
+            $transactionType = $item['transactionType'] ?? '';
+            $hasNoTransactionType = empty($transactionType) || $transactionType === 'JV';
+            
+            return $isManualJournal || $hasNoTransactionType;
+          });
+          
+          // Re-index array after filtering
+          $pageData = array_values($pageData);
+          
+          Log::info('JOURNAL_VOUCHER_FILTERED', [
+            'page' => $pageNumber,
+            'beforeFilter' => count($responseData['d'] ?? []),
+            'afterFilter' => count($pageData)
+          ]);
+        }
+        
+        // Add current page data to all data
+        $allData = array_merge($allData, $pageData);
+        
+        Log::info('ACCURATE_FETCH_PAGE_RESULT', [
+          'endpoint' => $endpoint,
+          'page' => $pageNumber,
+          'pageDataCount' => count($pageData),
+          'totalDataSoFar' => count($allData)
+        ]);
+        
+        // Check if there's more data
+        // If page returns less than pageSize, we've reached the end
+        $hasMoreData = count($pageData) === $pageSize;
+        
+        $pageNumber++;
+        
+        // Safety limit to prevent infinite loop (max 100 pages = 10,000 records)
+        if ($pageNumber > 100) {
+          Log::warning('ACCURATE_FETCH_MAX_PAGES_REACHED', [
+            'endpoint' => $endpoint,
+            'totalPages' => $pageNumber - 1,
+            'totalRecords' => count($allData)
+          ]);
+          break;
+        }
+        
+      } while ($hasMoreData);
+      
+      Log::info('ACCURATE_FETCH_COMPLETE', [
+        'endpoint' => $endpoint,
+        'totalPages' => $pageNumber - 1,
+        'totalRecords' => count($allData)
+      ]);
+
+      return $allData;
     } catch (\Exception $e) {
       Log::error('ACCURATE_FETCH_MODULE_EXCEPTION', [
         'endpoint' => $endpoint,
