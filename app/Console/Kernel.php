@@ -12,7 +12,16 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        $schedule->command('transactions:cleanup')
+            ->daily()
+            ->at('02:00') //cleanup jam 2 pagi
+            ->withoutOverlapping()
+            ->onSuccess(function () {
+                \Log::info('Transaction cleanup cron job completed successfully');
+            })
+            ->onFailure(function () {
+                \Log::error('Transaction cleanup cron job failed');
+            });
     }
 
     /**

@@ -8,6 +8,7 @@
 @endphp
 
 <x-app-layout>
+    <x-slot name="title">Migration Data</x-slot>
     <x-slot name="header">
         <div class="flex items-center gap-3">
             <div
@@ -118,17 +119,26 @@
                         <div x-data="{ 
                             open: false, 
                             selected: @js($current_database_name ?? 'Select Database'),
+                            loading: false,
                             selectDb(dbId, dbAlias, dbData) {
                                 this.selected = dbAlias;
                                 this.open = false;
+                                this.loading = true;
                                 document.getElementById('selectedDbInput').value = JSON.stringify(dbData);
                                 document.getElementById('dbSelectForm').submit();
                             }
                         }" class="relative w-full">
-                            <button @click="open = !open" type="button"
-                                class="bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs md:text-sm rounded-lg focus:ring-white/50 focus:border-white/50 w-full p-2 md:p-2.5 text-left flex items-center justify-between">
-                                <span x-text="selected"></span>
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                            <button @click="open = !open" type="button" :disabled="loading"
+                                class="bg-white/20 backdrop-blur-md border border-white/30 text-white text-xs md:text-sm rounded-lg focus:ring-white/50 focus:border-white/50 w-full p-2 md:p-2.5 text-left flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span x-show="!loading" x-text="selected"></span>
+                                <span x-show="loading" class="flex items-center gap-2">
+                                    <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Switching database...
+                                </span>
+                                <svg x-show="!loading" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                     stroke-width="1.5" stroke="currentColor" class="size-5 transition-transform"
                                     :class="{ 'rotate-180': open }">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -823,6 +833,11 @@
                             @endforelse
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="px-6 py-4 border-t border-gray-200">
+                    {{ $transactions->links() }}
                 </div>
             </div>
 

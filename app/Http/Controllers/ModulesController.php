@@ -48,7 +48,7 @@ class ModulesController extends Controller
     public function captureData(Request $request, AccurateService $accurate, $module)
     {
         // Set execution time limit to 5 minutes for large data capture
-        set_time_limit(300);
+        set_time_limit(3000);
         
         // Mapping module slug ke Accurate API endpoint
         $moduleMapping = [

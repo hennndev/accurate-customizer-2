@@ -3,6 +3,7 @@
 @endphp
 
 <x-app-layout>
+    <x-slot name="title">System Logs</x-slot>
     <x-slot name="header">
         <div class="flex items-center gap-3">
             <div

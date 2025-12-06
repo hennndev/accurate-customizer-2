@@ -1,4 +1,7 @@
 <x-app-layout>
+  <x-slot name="title">
+        Settings
+    </x-slot>
    <x-slot name="header">
         <div class="flex justify-between items-center w-full">
             <div class="flex items-center space-x-3">
