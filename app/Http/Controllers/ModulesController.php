@@ -506,11 +506,11 @@ class ModulesController extends Controller
 
                         if ($exists) {
                             $skippedCount++;
-                            Log::info('ACCURATE_ITEM_SKIPPED', [
-                                'module' => $module,
-                                'number' => $transactionNo,
-                                'reason' => 'already_exists'
-                            ]);
+                            // Log::info('ACCURATE_ITEM_SKIPPED', [
+                            //     'module' => $module,
+                            //     'number' => $transactionNo,
+                            //     'reason' => 'already_exists'
+                            // ]);
                             continue;
                         }
 
@@ -527,20 +527,20 @@ class ModulesController extends Controller
                         $savedCount++;
                         $savedTransactionNumbers[] = $transaction->transaction_no;
 
-                        Log::info('ACCURATE_ITEM_SAVED', [
-                            'module' => $module,
-                            'id' => $itemId,
-                            'identifier' => $transactionNo,
-                            'identifier_field' => $identifierField,
-                        ]);
+                        // Log::info('ACCURATE_ITEM_SAVED', [
+                        //     'module' => $module,
+                        //     'id' => $itemId,
+                        //     'identifier' => $transactionNo,
+                        //     'identifier_field' => $identifierField,
+                        // ]);
 
                     } catch (\Exception $e) {
                         $failedCount++;
-                        Log::error('ACCURATE_ITEM_ERROR', [
-                            'module' => $module,
-                            'item_id' => $itemId ?? null,
-                            'error' => $e->getMessage()
-                        ]);
+                        // Log::error('ACCURATE_ITEM_ERROR', [
+                        //     'module' => $module,
+                        //     'item_id' => $itemId ?? null,
+                        //     'error' => $e->getMessage()
+                        // ]);
                         continue;
                     }
                 }
