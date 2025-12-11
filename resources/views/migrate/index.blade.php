@@ -745,6 +745,8 @@
                                 </th>
                                 <th class="p-2 md:p-4 text-center text-xs md:text-sm font-semibold text-gray-700">
                                     Status</th>
+                                <th class="p-2 md:p-4 text-left text-xs md:text-sm font-semibold text-gray-700">
+                                    Error Details</th>
                                 <th class="p-2 md:p-4 text-center text-xs md:text-sm font-semibold text-gray-700">
                                     Action</th>
                             </tr>
@@ -804,6 +806,69 @@
                                             </span>
                                         @endif
                                     </td>
+                                    <td class="p-2 md:p-4 text-xs md:text-sm text-gray-600">
+                                        @if ($transaction->status === 'failed' && $transaction->error_message)
+                                            <div x-data="{ showError: false }" class="relative">
+                                                <button @click="showError = !showError" type="button"
+                                                    class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium transition">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                                                    </svg>
+                                                    View Error
+                                                </button>
+                                                
+                                                <!-- Error Detail Modal -->
+                                                <div x-show="showError" @click.away="showError = false" x-cloak
+                                                    class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="error-modal" role="dialog" aria-modal="true">
+                                                    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                                                        <!-- Background overlay -->
+                                                        <div x-show="showError" x-transition:enter="ease-out duration-300"
+                                                            x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+                                                            x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100"
+                                                            x-transition:leave-end="opacity-0"
+                                                            class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                                                            aria-hidden="true"></div>
+
+                                                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen"
+                                                            aria-hidden="true">&#8203;</span>
+
+                                                        <div x-show="showError" x-transition:enter="ease-out duration-300"
+                                                            x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                                                            x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+                                                            x-transition:leave="ease-in duration-200"
+                                                            x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+                                                            x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                                                            class="inline-block align-bottom bg-white rounded-2xl px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full sm:p-6">
+                                                            
+                                                            <div class="flex items-start gap-4">
+                                                                <div class="flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                                                                    <svg class="h-6 w-6 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                                                    </svg>
+                                                                </div>
+                                                                <div class="flex-1">
+                                                                    <h3 class="text-lg font-semibold text-gray-900 mb-2">
+                                                                        Error Details - {{ $transaction->transaction_no }}
+                                                                    </h3>
+                                                                    <div class="mt-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                                                                        <p class="text-sm text-red-800 font-mono whitespace-pre-wrap break-words">{{ $transaction->error_message }}</p>
+                                                                    </div>
+                                                                    <div class="mt-4 flex justify-end">
+                                                                        <button @click="showError = false" type="button"
+                                                                            class="inline-flex items-center px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition">
+                                                                            Close
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @else
+                                            <span class="text-gray-400 text-xs">-</span>
+                                        @endif
+                                    </td>
                                     <td class="p-2 md:p-4 text-center">
                                         <button @click="confirmSingleDelete({{ $transaction->id }})"
                                             class="inline-flex items-center justify-center p-1.5 md:p-2 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700 transition">
@@ -818,7 +883,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="8" class="p-8 text-center text-gray-500">
+                                    <td colspan="9" class="p-8 text-center text-gray-500">
                                         <div class="flex flex-col items-center gap-2">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none"
                                                 viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"

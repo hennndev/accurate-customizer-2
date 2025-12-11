@@ -260,6 +260,16 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                                 </svg>
                             </li>
+                            <li @click="selected = 'partial'; $nextTick(() => $el.closest('form').submit())"
+                                :class="selected === 'partial' ? 'bg-blue-50' : ''"
+                                class="px-4 py-2 text-gray-700 text-sm hover:bg-gray-100 cursor-pointer transition font-medium flex items-center justify-between">
+                                <span>Partial</span>
+                                <svg x-show="selected === 'partial'" xmlns="http://www.w3.org/2000/svg" fill="none"
+                                    viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+                                    class="size-4 text-blue-600">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            </li>
                         </ul>
                     </div>
                 </div>
@@ -267,9 +277,9 @@
 
             <div class="flex flex-col gap-3 md:gap-4">
                 @forelse($logs as $log)
-                    <div
+                    <div x-data="{ showDetails: false }"
                         class="flex flex-col sm:flex-row justify-between rounded-2xl border border-gray-200 cursor-default hover:shadow-md p-3 md:p-4 lg:p-5 gap-3 sm:gap-0">
-                        <div class="flex gap-3 md:gap-4 lg:gap-5">
+                        <div class="flex gap-3 md:gap-4 lg:gap-5 flex-1">
                             <div class="bg-gray-50 w-6 h-6 md:w-7 md:h-7 rounded-lg flex items-center justify-center flex-shrink-0">
                                 @if($log->status === 'success')
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
@@ -282,6 +292,12 @@
                                         stroke-width="1.5" stroke="currentColor" class="w-4 h-4 md:w-5 md:h-5 text-red-500">
                                         <path stroke-linecap="round" stroke-linejoin="round"
                                             d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                    </svg>
+                                @elseif($log->status === 'partial')
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                        stroke-width="1.5" stroke="currentColor" class="w-4 h-4 md:w-5 md:h-5 text-orange-600">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
                                     </svg>
                                 @elseif($log->status === 'info')
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
@@ -297,7 +313,7 @@
                                     </svg>
                                 @endif
                             </div>
-                            <div class="flex flex-col gap-1">
+                            <div class="flex flex-col gap-1 flex-1">
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <div class="rounded-lg 
                                         {{ $log->event_type === 'delete' || $log->event_type === 'mass delete' ? 'bg-red-50 border-red-200' : '' }}
@@ -317,12 +333,143 @@
                                 </div>
                                 <p class="text-black font-medium text-sm md:text-base">{{ $log->message }}</p>
                                 <p class="text-xs text-gray-600">{{ $log->created_at->format('m/d/Y, g:i:s A') }}</p>
+                                
+                                @if($log->payload)
+                                    <button @click="showDetails = !showDetails" type="button"
+                                        class="mt-2 text-xs md:text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 w-max">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" 
+                                            stroke="currentColor" class="w-4 h-4">
+                                            <path stroke-linecap="round" stroke-linejoin="round" 
+                                                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                                        </svg>
+                                        <span x-text="showDetails ? 'Hide Details' : 'View Details'"></span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" 
+                                            stroke="currentColor" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showDetails }">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                        </svg>
+                                    </button>
+                                    
+                                    <div x-show="showDetails" x-collapse class="mt-3">
+                                        <div class="rounded-lg border-2 
+                                            {{ $log->status === 'failed' ? 'bg-red-50 border-red-200' : '' }}
+                                            {{ $log->status === 'partial' ? 'bg-orange-50 border-orange-200' : '' }}
+                                            {{ $log->status === 'warning' ? 'bg-yellow-50 border-yellow-200' : '' }}
+                                            {{ $log->status === 'success' ? 'bg-green-50 border-green-200' : '' }}
+                                            {{ $log->status === 'info' ? 'bg-blue-50 border-blue-200' : '' }}
+                                            p-3 md:p-4">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <p class="font-semibold text-sm 
+                                                    {{ $log->status === 'failed' ? 'text-red-700' : '' }}
+                                                    {{ $log->status === 'partial' ? 'text-orange-700' : '' }}
+                                                    {{ $log->status === 'warning' ? 'text-yellow-700' : '' }}
+                                                    {{ $log->status === 'success' ? 'text-green-700' : '' }}
+                                                    {{ $log->status === 'info' ? 'text-blue-700' : '' }}">
+                                                    Event Details
+                                                </p>
+                                            </div>
+                                            
+                                            @if((isset($log->payload['error']) || (isset($log->payload['errors']) && count($log->payload['errors']) > 0)) && ($log->status === 'failed' || $log->status === 'warning' || $log->status === 'partial'))
+                                                <div class="bg-red-50 border-2 border-red-200 rounded-lg p-3 mb-3">
+                                                    <div class="flex items-start gap-2">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" 
+                                                            stroke="currentColor" class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" 
+                                                                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                                                        </svg>
+                                                        <div class="flex-1">
+                                                            <p class="text-xs font-semibold text-red-900 mb-2">Error {{ isset($log->payload['errors']) && count($log->payload['errors']) > 1 ? 'Messages' : 'Message' }}:</p>
+                                                            
+                                                            @if(isset($log->payload['errors']) && count($log->payload['errors']) > 0)
+                                                                <div class="space-y-2">
+                                                                    @foreach($log->payload['errors'] as $index => $error)
+                                                                        <div class="bg-white border border-red-200 rounded p-2">
+                                                                            <div class="flex items-start gap-2">
+                                                                                <span class="text-xs font-bold text-red-700 flex-shrink-0">{{ $index + 1 }}.</span>
+                                                                                <p class="text-xs text-red-800 leading-relaxed break-words flex-1">{{ $error }}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endforeach
+                                                                </div>
+                                                            @elseif(isset($log->payload['error']))
+                                                                <p class="text-xs text-red-800 leading-relaxed break-words">{{ $log->payload['error'] }}</p>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            @endif
+
+                                            <div class="bg-white rounded border 
+                                                {{ $log->status === 'failed' ? 'border-red-300' : '' }}
+                                                {{ $log->status === 'partial' ? 'border-orange-300' : '' }}
+                                                {{ $log->status === 'warning' ? 'border-yellow-300' : '' }}
+                                                {{ $log->status === 'success' ? 'border-green-300' : '' }}
+                                                {{ $log->status === 'info' ? 'border-blue-300' : '' }}
+                                                p-3 space-y-2">
+                                                @if(isset($log->payload['module']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Module:</span>
+                                                        <span class="text-xs font-medium text-gray-900">{{ $log->payload['module'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['target_database']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Target Database:</span>
+                                                        <span class="text-xs font-medium text-gray-900">{{ $log->payload['target_database'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['total_items']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Total Items:</span>
+                                                        <span class="text-xs font-medium text-gray-900">{{ $log->payload['total_items'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['success_items']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Success Items:</span>
+                                                        <span class="text-xs font-semibold text-green-600">{{ $log->payload['success_items'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['failed_items']) && $log->payload['failed_items'] > 0)
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Failed Items:</span>
+                                                        <span class="text-xs font-semibold text-red-600">{{ $log->payload['failed_items'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['endpoint']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">API Endpoint:</span>
+                                                        <span class="text-xs font-medium text-gray-900 break-all">{{ $log->payload['endpoint'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['transaction_ids']) && count($log->payload['transaction_ids']) > 0)
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Transaction IDs:</span>
+                                                        <span class="text-xs font-medium text-gray-900">{{ count($log->payload['transaction_ids']) }} transaction(s)</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['transaction_no']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Transaction No:</span>
+                                                        <span class="text-xs font-medium text-gray-900">{{ $log->payload['transaction_no'] }}</span>
+                                                    </div>
+                                                @endif
+                                                @if(isset($log->payload['source_database']))
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs font-medium text-gray-500 min-w-[120px]">Source Database:</span>
+                                                        <span class="text-xs font-medium text-gray-900">{{ $log->payload['source_database'] }}</span>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
                         </div>
                         <div class="flex min-w-[200px] items-end flex-col gap-1">
                           <div class="rounded-lg 
                               {{ $log->status === 'success' ? 'bg-green-50 border-green-200 text-green-600' : '' }}
                               {{ $log->status === 'failed' ? 'bg-red-50 border-red-200 text-red-600' : '' }}
+                              {{ $log->status === 'partial' ? 'bg-orange-50 border-orange-200 text-orange-600' : '' }}
                               {{ $log->status === 'info' ? 'bg-blue-50 border-blue-200 text-blue-600' : '' }}
                               {{ $log->status === 'warning' ? 'bg-yellow-50 border-yellow-200 text-yellow-600' : '' }}
                               border px-2 py-1 h-max w-max">
