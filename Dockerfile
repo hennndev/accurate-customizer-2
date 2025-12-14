@@ -17,6 +17,7 @@ RUN apk add --no-cache \
     libzip \
     nodejs \
     npm \
+    bash \
     && apk add --no-cache --virtual .build-deps \
     libpng-dev \
     libxml2-dev \
@@ -48,8 +49,17 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 # Set working directory
 WORKDIR /var/www/html
 
+# Copy composer files first for better caching
+COPY composer.json composer.lock ./
+
+# Install PHP dependencies
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
+
 # Copy application files
 COPY . .
+
+# Generate optimized autoload
+RUN composer dump-autoload --optimize --no-dev
 
 # Copy configuration files
 COPY docker/php/php.ini $PHP_INI_DIR/conf.d/99-custom.ini
@@ -57,12 +67,6 @@ COPY docker/php/www.conf /usr/local/etc/php-fpm.d/www.conf
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY docker/nginx/default.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction
-
-# Install Node dependencies and build assets (will be built in VPS)
-# Skipped here to avoid build issues, will run on VPS
 
 # Set proper permissions
 RUN mkdir -p storage/framework/{sessions,views,cache} \
@@ -72,8 +76,11 @@ RUN mkdir -p storage/framework/{sessions,views,cache} \
     && chmod -R 775 storage bootstrap/cache
 
 # Create nginx cache directories
-RUN mkdir -p /var/cache/nginx /var/log/nginx \
-    && chown -R www-data:www-data /var/cache/nginx /var/log/nginx
+RUN mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx/tmp \
+    && chown -R www-data:www-data /var/cache/nginx /var/log/nginx /var/lib/nginx
+
+# Create supervisor log directory
+RUN mkdir -p /var/log/supervisor
 
 # Expose port
 EXPOSE 80
