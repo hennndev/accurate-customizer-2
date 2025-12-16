@@ -290,13 +290,13 @@ class DataMigrateController extends Controller
                                 $successCount++;
                                 $moduleResults[$module->name]['success']++;
                                 
-                                Log::info('MIGRATION_ITEM_SUCCESS', [
-                                    'module' => $module->name,
-                                    'chunk_index' => $chunkIndex + 1,
-                                    'item_index' => $idx,
-                                    'transaction_id' => $transaction->id,
-                                    'message' => 'Bulk save successful',
-                                ]);
+                                // Log::info('MIGRATION_ITEM_SUCCESS', [
+                                //     'module' => $module->name,
+                                //     'chunk_index' => $chunkIndex + 1,
+                                //     'item_index' => $idx,
+                                //     'transaction_id' => $transaction->id,
+                                //     'message' => 'Bulk save successful',
+                                // ]);
                             }
                         } else {
                             // Process individual item results
@@ -311,13 +311,13 @@ class DataMigrateController extends Controller
                                 $successCount++;
                                 $moduleResults[$module->name]['success']++;
                                 
-                                Log::info('MIGRATION_ITEM_SUCCESS', [
-                                    'module' => $module->name,
-                                    'chunk_index' => $chunkIndex + 1,
-                                    'item_index' => $idx,
-                                    'transaction_id' => $transaction->id,
-                                    'message' => $itemResult['d'] ?? 'Success',
-                                ]);
+                                // Log::info('MIGRATION_ITEM_SUCCESS', [
+                                //     'module' => $module->name,
+                                //     'chunk_index' => $chunkIndex + 1,
+                                //     'item_index' => $idx,
+                                //     'transaction_id' => $transaction->id,
+                                //     'message' => $itemResult['d'] ?? 'Success',
+                                // ]);
                             } else {
                                 $errorData = $itemResult['d'] ?? ['Unknown error'];
                                 
@@ -333,6 +333,179 @@ class DataMigrateController extends Controller
                                     $errorText = (string) $errorData;
                                 }
                                 
+                                // Special handling for journal-voucher branch errors
+                                if ($module->slug === 'journal-voucher' && 
+                                    (str_contains($errorText, 'Cabang tidak ditemukan') || 
+                                     str_contains($errorText, 'Cabang sudah dihapus') || 
+                                     str_contains($errorText, 'Cabang harus diisi'))) {
+                                    
+                                    // Get transaction data
+                                    $transactionData = json_decode($transaction->data, true);
+                                    $branchNames = [];
+                                    
+                                    // Collect all unique branch names from detailJournalVoucher
+                                    if (isset($transactionData['detailJournalVoucher']) && 
+                                        is_array($transactionData['detailJournalVoucher'])) {
+                                        foreach ($transactionData['detailJournalVoucher'] as $detail) {
+                                            if (isset($detail['branch']['name'])) {
+                                                $branchName = $detail['branch']['name'];
+                                                if (!in_array($branchName, $branchNames)) {
+                                                    $branchNames[] = $branchName;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    Log::info('BRANCH_CONFLICT_DETECTED', [
+                                        'transaction_id' => $transaction->id,
+                                        'transaction_no' => $transactionData['transactionNo'] ?? 'unknown',
+                                        'conflicting_branches' => $branchNames,
+                                        'attempting_auto_fix' => true
+                                    ]);
+                                    
+                                    try {
+                                        // Fetch all branches from target database
+                                        $targetBranches = $this->accurateService->fetchModuleData('/api/branch/list.do', [
+                                            'fields' => 'id,name'
+                                        ]);
+                                        
+                                        Log::info('TARGET_BRANCHES_FETCHED', [
+                                            'total_branches' => is_array($targetBranches) ? count($targetBranches) : 0
+                                        ]);
+                                        
+                                        $branchMapping = [];
+                                        if (is_array($targetBranches)) {
+                                            foreach ($targetBranches as $branch) {
+                                                if (isset($branch['name']) && isset($branch['id'])) {
+                                                    $branchMapping[$branch['name']] = $branch['id'];
+                                                }
+                                            }
+                                        }
+                                        
+                                        Log::info('BRANCH_MAPPING_CREATED', [
+                                            'mapping' => $branchMapping
+                                        ]);
+                                        
+                                        // Remap branchId in transaction data
+                                        $remapped = false;
+                                        $firstBranchId = null; // Store first remapped branchId for root level
+                                        
+                                        if (isset($transactionData['detailJournalVoucher']) && 
+                                            is_array($transactionData['detailJournalVoucher'])) {
+                                            foreach ($transactionData['detailJournalVoucher'] as &$detail) {
+                                                if (isset($detail['branch']['name'])) {
+                                                    $branchName = $detail['branch']['name'];
+                                                    
+                                                    // Find matching branch in target database
+                                                    if (isset($branchMapping[$branchName])) {
+                                                        $oldBranchId = $detail['branchId'] ?? null;
+                                                        $newBranchId = $branchMapping[$branchName];
+                                                        $detail['branchId'] = $newBranchId;
+                                                        $remapped = true;
+                                                        
+                                                        // Store first branchId for root level
+                                                        if ($firstBranchId === null) {
+                                                            $firstBranchId = $newBranchId;
+                                                        }
+                                                        
+                                                        Log::info('BRANCH_ID_REMAPPED', [
+                                                            'branch_name' => $branchName,
+                                                            'old_branch_id' => $oldBranchId,
+                                                            'new_branch_id' => $newBranchId
+                                                        ]);
+                                                    } else {
+                                                        Log::warning('BRANCH_NOT_FOUND_IN_TARGET', [
+                                                            'branch_name' => $branchName,
+                                                            'available_branches' => array_keys($branchMapping)
+                                                        ]);
+                                                    }
+                                                }
+                                            }
+                                            unset($detail); // Break reference
+                                        }
+                                        
+                                        // Update root level branchId juga
+                                        if ($remapped && $firstBranchId !== null && isset($transactionData['branchId'])) {
+                                            $oldRootBranchId = $transactionData['branchId'];
+                                            $transactionData['branchId'] = $firstBranchId;
+                                            
+                                            Log::info('ROOT_BRANCH_ID_REMAPPED', [
+                                                'old_branch_id' => $oldRootBranchId,
+                                                'new_branch_id' => $firstBranchId
+                                            ]);
+                                        }
+                                        
+                                        if ($remapped) {
+                                            // Update transaction with remapped data
+                                            $transaction->update([
+                                                'data' => json_encode($transactionData)
+                                            ]);
+                                            
+                                            Log::info('BRANCH_CONFLICT_AUTO_FIXED', [
+                                                'transaction_id' => $transaction->id,
+                                                'transaction_no' => $transactionData['transactionNo'] ?? 'unknown'
+                                            ]);
+                                            
+                                            // Log data yang akan di-migrate untuk debugging
+                                            Log::info('RETRY_MIGRATION_DATA', [
+                                                'transaction_id' => $transaction->id,
+                                                'transaction_no' => $transactionData['transactionNo'] ?? 'unknown',
+                                                'data_to_migrate' => $transactionData,
+                                                'detail_count' => count($transactionData['detailJournalVoucher'] ?? [])
+                                            ]);
+                                            
+                                            // Retry migration with fixed data
+                                            $retryResult = $this->accurateService->bulkSaveToAccurate($endpoint, [$transactionData]);
+                                            
+                                            if (isset($retryResult['s']) && $retryResult['s'] === true) {
+                                                $transaction->update([
+                                                    'status' => 'success',
+                                                    'migrated_at' => now(),
+                                                    'error_message' => null
+                                                ]);
+                                                $successCount++;
+                                                $moduleResults[$module->name]['success']++;
+                                                
+                                                // Decrease failed count since we're converting this to success
+                                                if ($failedCount > 0) {
+                                                    $failedCount--;
+                                                    $moduleResults[$module->name]['failed']--;
+                                                }
+                                                
+                                                Log::info('BRANCH_CONFLICT_RETRY_SUCCESS', [
+                                                    'transaction_id' => $transaction->id,
+                                                    'transaction_no' => $transactionData['transactionNo'] ?? 'unknown'
+                                                ]);
+                                                
+                                                continue; // Skip error handling below
+                                            } else {
+                                                Log::error('BRANCH_CONFLICT_RETRY_FAILED', [
+                                                    'transaction_id' => $transaction->id,
+                                                    'transaction_no' => $transactionData['transactionNo'] ?? 'unknown',
+                                                    'retry_error' => $retryResult
+                                                ]);
+                                            }
+                                        }
+                                    } catch (\Exception $autoFixError) {
+                                        Log::error('BRANCH_CONFLICT_AUTO_FIX_FAILED', [
+                                            'transaction_id' => $transaction->id,
+                                            'error' => $autoFixError->getMessage()
+                                        ]);
+                                    }
+                                    
+                                    // Build error message with all branches
+                                    if (count($branchNames) > 0) {
+                                        if (count($branchNames) === 1) {
+                                            $errorText = "Branch \"{$branchNames[0]}\" memiliki ID referensi yang berbeda pada database tujuan. Auto-fix attempted but failed: {$errorText}";
+                                        } else {
+                                            $branchList = implode('", "', $branchNames);
+                                            $errorText = "Branches \"{$branchList}\" memiliki ID referensi yang berbeda pada database tujuan. Auto-fix attempted but failed: {$errorText}";
+                                        }
+                                    } else {
+                                        $errorText = "Branch memiliki ID referensi yang berbeda pada database tujuan. Auto-fix attempted but failed: {$errorText}";
+                                    }
+                                }
+                                
                                 $transaction->update([
                                     'status' => 'failed',
                                     'error_message' => $errorText,
@@ -345,24 +518,24 @@ class DataMigrateController extends Controller
                                     $moduleResults[$module->name]['errors'][] = $errorText;
                                 }
                                 
-                                Log::error('MIGRATION_ITEM_FAILED', [
-                                    'module' => $module->name,
-                                    'chunk_index' => $chunkIndex + 1,
-                                    'item_index' => $idx,
-                                    'transaction_id' => $transaction->id,
-                                    'error' => $errorText,
-                                ]);
+                                // Log::error('MIGRATION_ITEM_FAILED', [
+                                //     'module' => $module->name,
+                                //     'chunk_index' => $chunkIndex + 1,
+                                //     'item_index' => $idx,
+                                //     'transaction_id' => $transaction->id,
+                                //     'error' => $errorText,
+                                // ]);
                             }
                         }
                         }
 
-                        Log::info('MIGRATION_CHUNK_PROCESSED', [
-                            'module' => $module->name,
-                            'chunk_index' => $chunkIndex + 1,
-                            'total_items' => count($chunkTransactions[$chunkIndex]),
-                            'current_success_count' => $successCount,
-                            'current_failed_count' => $failedCount,
-                        ]);
+                        // Log::info('MIGRATION_CHUNK_PROCESSED', [
+                        //     'module' => $module->name,
+                        //     'chunk_index' => $chunkIndex + 1,
+                        //     'total_items' => count($chunkTransactions[$chunkIndex]),
+                        //     'current_success_count' => $successCount,
+                        //     'current_failed_count' => $failedCount,
+                        // ]);
                     }
 
                     $moduleSuccessCount = $moduleTransactions->filter(function($t) {
@@ -373,13 +546,13 @@ class DataMigrateController extends Controller
                         return $t->fresh()->status === 'failed';
                     })->count();
 
-                    Log::info('MIGRATION_MODULE_COMPLETED', [
-                        'module' => $module->name,
-                        'success_count' => $moduleSuccessCount,
-                        'failed_count' => $moduleFailedCount,
-                        'total_success_so_far' => $successCount,
-                        'total_failed_so_far' => $failedCount,
-                    ]);
+                    // Log::info('MIGRATION_MODULE_COMPLETED', [
+                    //     'module' => $module->name,
+                    //     'success_count' => $moduleSuccessCount,
+                    //     'failed_count' => $moduleFailedCount,
+                    //     'total_success_so_far' => $successCount,
+                    //     'total_failed_so_far' => $failedCount,
+                    // ]);
                     if ($moduleSuccessCount > 0) {
                         SystemLog::create([
                             'event_type' => 'migrate',
@@ -490,16 +663,16 @@ class DataMigrateController extends Controller
 
             $status = $failedCount > 0 ? 'error' : 'success';
 
-            Log::info('MIGRATION_COMPLETED', [
-                'user_id' => Auth::id(),
-                'target_database' => $targetDbName,
-                'total_transactions' => count($ids),
-                'success_count' => $successCount,
-                'failed_count' => $failedCount,
-                'skipped_count' => $skippedCount,
-                'status' => $status,
-                'errors' => $errors,
-            ]);
+            // Log::info('MIGRATION_COMPLETED', [
+            //     'user_id' => Auth::id(),
+            //     'target_database' => $targetDbName,
+            //     'total_transactions' => count($ids),
+            //     'success_count' => $successCount,
+            //     'failed_count' => $failedCount,
+            //     'skipped_count' => $skippedCount,
+            //     'status' => $status,
+            //     'errors' => $errors,
+            // ]);
 
             return redirect()->route('migrate.index')->with($status, $message);
 

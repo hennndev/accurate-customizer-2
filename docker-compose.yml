@@ -36,9 +36,9 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${DB_DATABASE:-accurate_customizer}
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
       MYSQL_USER: ${DB_USERNAME:-accurate_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
     volumes:
       - db-data:/var/lib/mysql
     ports:
@@ -67,4 +67,5 @@ volumes:
 
 networks:
   accurate-network:
+    name: accurate-network
     driver: bridge
